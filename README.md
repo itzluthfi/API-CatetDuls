@@ -64,7 +64,7 @@ php artisan serve
 
 **Demo Account:**
 ```
-Email: sirL@gamil.com
+Email: sirL@gmail.com
 Password: password
 ```
 
@@ -143,8 +143,8 @@ curl -X POST http://localhost:8000/api/auth/register \
   -d '{
     "name": "John Doe",
     "email": "john@example.com",
-    "password": "password123",
-    "password_confirmation": "password123"
+    "password": "password",
+    "password_confirmation": "password"
   }'
 
 # Login
@@ -152,7 +152,7 @@ curl -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john@example.com",
-    "password": "password123"
+    "password": "password"
   }'
 
 # Response will include token
@@ -354,8 +354,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📧 Contact
 
-- **Email:** luthfishidqi2@gmail.com
-- **GitHub:** [@itzluthfi](https://github.com/itzltuhfi)
+- **Email:** your.email@example.com
+- **GitHub:** [@yourusername](https://github.com/yourusername)
 - **Website:** https://yourwebsite.com
 
 ---
