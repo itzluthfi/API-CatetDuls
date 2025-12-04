@@ -1,59 +1,377 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# 💰 FinNote API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+> Modern Personal Finance Management RESTful API built with Laravel
 
-## About Laravel
+[![Laravel](https://img.shields.io/badge/Laravel-11.x-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
+[![PHP](https://img.shields.io/badge/PHP-8.2+-777BB4?style=flat-square&logo=php)](https://php.net)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## 🎯 About
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+**FinNote API** adalah RESTful API untuk manajemen keuangan pribadi. Fitur lengkap untuk tracking income/expense, multiple wallets, categories, dan financial analytics.
 
-## Learning Laravel
+**Perfect for:** Mobile Apps • Web Apps • Desktop Apps • Integrations
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+---
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## ✨ Key Features
 
-## Laravel Sponsors
+- 🔐 **Authentication** - Register, Login, Token-based auth (Sanctum)
+- 👤 **User Management** - Profile, Photo, Preferences, Statistics
+- 📚 **Multi Books** - Kelola multiple buku keuangan
+- 💳 **Multi Wallets** - Cash, Bank, E-Wallet dengan real-time balance
+- 📂 **Categories** - Income & Expense categories
+- 💸 **Transactions** - Full CRUD, Image upload, Advanced filtering
+- 📊 **Analytics** - Summary, Group by category/date, Reports
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+---
 
-### Premium Partners
+## 🚀 Quick Start
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+### Installation
 
-## Contributing
+```bash
+# Clone repository
+git clone https://github.com/yourusername/finnote-api.git
+cd finnote-api
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+# Install dependencies
+composer install
 
-## Code of Conduct
+# Setup environment
+cp .env.example .env
+php artisan key:generate
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+# Configure database in .env
+DB_DATABASE=finnote
+DB_USERNAME=root
+DB_PASSWORD=
 
-## Security Vulnerabilities
+# Install Sanctum
+composer require laravel/sanctum
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+# Run migrations & seeders
+php artisan migrate --seed
 
-## License
+# Create storage link
+php artisan storage:link
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+# Start server
+php artisan serve
+```
+
+**Demo Account:**
+```
+Email: sirL@gamil.com
+Password: password
+```
+
+---
+
+## 📖 API Endpoints
+
+### Authentication
+```
+POST   /api/auth/register          # Register user
+POST   /api/auth/login             # Login
+POST   /api/auth/logout            # Logout
+GET    /api/auth/me                # Get current user
+POST   /api/auth/change-password   # Change password
+```
+
+### User Profile
+```
+GET    /api/user/profile           # Get profile
+PUT    /api/user/profile           # Update profile
+POST   /api/user/photo             # Upload photo
+GET    /api/user/statistics        # Get statistics
+```
+
+### Books
+```
+GET    /api/books                  # Get all books
+POST   /api/books                  # Create book
+GET    /api/books/{id}             # Get single book
+PUT    /api/books/{id}             # Update book
+DELETE /api/books/{id}             # Delete book
+```
+
+### Wallets
+```
+GET    /api/wallets                # Get all wallets
+POST   /api/wallets                # Create wallet
+GET    /api/wallets/{id}           # Get single wallet
+PUT    /api/wallets/{id}           # Update wallet
+DELETE /api/wallets/{id}           # Delete wallet
+```
+
+### Categories
+```
+GET    /api/categories             # Get all categories
+POST   /api/categories             # Create category
+GET    /api/categories/{id}        # Get single category
+PUT    /api/categories/{id}        # Update category
+DELETE /api/categories/{id}        # Delete category
+```
+
+### Transactions
+```
+GET    /api/transactions           # Get all (paginated, filterable)
+POST   /api/transactions           # Create transaction
+GET    /api/transactions/{id}      # Get single transaction
+PUT    /api/transactions/{id}      # Update transaction
+DELETE /api/transactions/{id}      # Delete transaction
+
+# Analytics
+GET    /api/transactions/summary        # Income/Expense summary
+GET    /api/transactions/by-category    # Group by category
+GET    /api/transactions/by-date        # Group by date
+POST   /api/transactions/bulk-delete    # Bulk delete
+```
+
+---
+
+## 💡 Usage Examples
+
+### Register & Login
+```bash
+# Register
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "email": "john@example.com",
+    "password": "password123",
+    "password_confirmation": "password123"
+  }'
+
+# Login
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "password123"
+  }'
+
+# Response will include token
+{
+  "success": true,
+  "data": {
+    "token": "1|xxxxxxxxxxxxxx",
+    "token_type": "Bearer"
+  }
+}
+```
+
+### Create Transaction
+```bash
+curl -X POST http://localhost:8000/api/transactions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "book_id": 1,
+    "wallet_id": 1,
+    "category_id": 1,
+    "type": "PENGELUARAN",
+    "amount": 50000,
+    "note": "Makan siang"
+  }'
+```
+
+### Get Summary
+```bash
+curl -X GET "http://localhost:8000/api/transactions/summary?book_id=1" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Response
+{
+  "success": true,
+  "data": {
+    "income": 2000000,
+    "expense": 25000,
+    "balance": 1975000
+  }
+}
+```
+
+---
+
+## 🗄️ Database Schema
+
+```
+users
+├── id
+├── name
+├── email
+├── password
+├── photo_url
+└── preferences (JSON)
+
+books
+├── id
+├── user_id
+├── name
+├── description
+├── icon
+├── color
+└── is_default
+
+wallets
+├── id
+├── book_id
+├── name
+├── type (CASH|BANK|E_WALLET)
+├── icon
+├── color
+├── initial_balance
+└── is_default
+
+categories
+├── id
+├── book_id
+├── name
+├── type (PEMASUKAN|PENGELUARAN)
+├── icon
+├── color
+└── is_default
+
+transactions
+├── id
+├── book_id
+├── wallet_id
+├── category_id
+├── type (PEMASUKAN|PENGELUARAN)
+├── amount
+├── note
+├── image_url
+└── created_at_ms (timestamp)
+```
+
+---
+
+## ⚙️ Configuration
+
+### .env Configuration
+```env
+APP_URL=http://localhost:8000
+
+DB_CONNECTION=mysql
+DB_DATABASE=finnote
+DB_USERNAME=root
+DB_PASSWORD=
+
+FILESYSTEM_DISK=public
+
+SESSION_DRIVER=cookie
+SANCTUM_STATEFUL_DOMAINS=localhost:3000
+```
+
+### CORS Setup
+File: `config/cors.php`
+```php
+'paths' => ['api/*', 'sanctum/csrf-cookie'],
+'allowed_origins' => ['*'],
+'supports_credentials' => true,
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run tests
+php artisan test
+
+# Test with Postman
+# Import collection from /docs/postman_collection.json
+```
+
+---
+
+## 📦 Deployment
+
+### Production Checklist
+
+```bash
+# Optimize
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+# Set production environment
+APP_ENV=production
+APP_DEBUG=false
+
+# Generate app key
+php artisan key:generate
+
+# Run migrations
+php artisan migrate --force
+
+# Storage link
+php artisan storage:link
+```
+
+### Recommended Hosting
+- ✅ Laravel Forge
+- ✅ DigitalOcean
+- ✅ AWS EC2
+- ✅ Heroku
+
+---
+
+## 🔒 Security
+
+- ✅ Password hashing (bcrypt)
+- ✅ Token authentication (Sanctum)
+- ✅ CSRF protection
+- ✅ Rate limiting
+- ✅ Input validation
+- ✅ SQL injection prevention
+- ✅ XSS protection
+
+---
+
+## 📝 License
+
+This project is licensed under the MIT License.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## 📧 Contact
+
+- **Email:** luthfishidqi2@gmail.com
+- **GitHub:** [@itzluthfi](https://github.com/itzltuhfi)
+- **Website:** https://yourwebsite.com
+
+---
+
+## 🙏 Acknowledgments
+
+- Laravel Framework
+- Laravel Sanctum
+- All contributors
+
+---
+
+<div align="center">
+
+Made with ❤️ by [Your Name]
+
+**Star ⭐ this repository if you find it helpful!**
+
+</div>
