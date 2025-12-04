@@ -25,6 +25,11 @@ class Transaction extends Model
         'created_at_ms' => 'integer',
     ];
 
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
     public function book()
     {
         return $this->belongsTo(Book::class);

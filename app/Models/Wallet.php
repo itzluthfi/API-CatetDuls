@@ -26,6 +26,11 @@ class Wallet extends Model
 
     protected $appends = ['current_balance'];
 
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
     // Relationships
     public function book()
     {

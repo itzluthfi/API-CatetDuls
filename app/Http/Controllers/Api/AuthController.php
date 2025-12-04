@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -17,7 +18,10 @@ class AuthController extends Controller
      * Register new user
      */
     public function register(Request $request)
-    {
+{
+    try {
+        DB::beginTransaction();
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
@@ -30,7 +34,6 @@ class AuthController extends Controller
             'password' => Hash::make($validated['password']),
         ]);
 
-        // Create default book for new user
         $book = $user->books()->create([
             'name' => 'Buku Utama',
             'description' => 'Buku keuangan utama',
@@ -39,7 +42,6 @@ class AuthController extends Controller
             'is_default' => true,
         ]);
 
-        // Create default wallet
         $book->wallets()->create([
             'name' => 'Tunai',
             'type' => 'CASH',
@@ -49,16 +51,13 @@ class AuthController extends Controller
             'is_default' => true,
         ]);
 
-        // Create default categories
         $categories = [
-            // Pengeluaran
             ['name' => 'Makanan & Minuman', 'icon' => '🍔', 'type' => 'PENGELUARAN'],
             ['name' => 'Transport', 'icon' => '🚌', 'type' => 'PENGELUARAN'],
             ['name' => 'Belanja', 'icon' => '🛒', 'type' => 'PENGELUARAN'],
             ['name' => 'Hiburan', 'icon' => '🎮', 'type' => 'PENGELUARAN'],
             ['name' => 'Lainnya (Pengeluaran)', 'icon' => '⚙️', 'type' => 'PENGELUARAN'],
 
-            // Pemasukan
             ['name' => 'Gaji', 'icon' => '💼', 'type' => 'PEMASUKAN'],
             ['name' => 'Bonus', 'icon' => '💰', 'type' => 'PEMASUKAN'],
             ['name' => 'Lainnya (Pemasukan)', 'icon' => '⚙️', 'type' => 'PEMASUKAN'],
@@ -74,8 +73,9 @@ class AuthController extends Controller
             ]);
         }
 
-        // Create token
         $token = $user->createToken('auth_token')->plainTextToken;
+
+        DB::commit();
 
         return response()->json([
             'success' => true,
@@ -86,7 +86,18 @@ class AuthController extends Controller
                 'token_type' => 'Bearer',
             ]
         ], 201);
+
+    } catch (\Throwable $e) {
+
+        DB::rollBack();
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Registration failed',
+            'error' => $e->getMessage(),
+        ], 500);
     }
+}
 
     /**
      * Login user

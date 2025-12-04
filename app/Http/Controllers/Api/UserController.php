@@ -3,8 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-
-
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,12 +15,11 @@ class UserController extends Controller
     /**
      * Get user profile
      */
-    public function profile(Request $request)
+    public function profile()
     {
-        $user = $request->user();
+        $user = Auth::user();
         $user->load(['books.wallets', 'books.categories']);
 
-        // Get statistics
         $stats = [
             'total_books' => $user->books()->count(),
             'total_transactions' => $user->books()->withCount('transactions')->get()->sum('transactions_count'),
@@ -43,7 +40,7 @@ class UserController extends Controller
      */
     public function updateProfile(Request $request)
     {
-        $user = $request->user();
+        $user = Auth::user();
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
@@ -65,7 +62,7 @@ class UserController extends Controller
     }
 
     /**
-     * Upload profile photo (jika ingin ada fitur foto profil)
+     * Upload profile photo
      */
     public function uploadPhoto(Request $request)
     {
@@ -73,15 +70,13 @@ class UserController extends Controller
             'photo' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
-        $user = $request->user();
+        $user = Auth::user();
 
-        // Delete old photo if exists
         if ($user->photo_url) {
-            $oldPath = str_replace(Storage::url(''), '', $user->photo_url); // Penyesuaian: pastikan hanya path relatif yang dihapus
+            $oldPath = str_replace(Storage::url(''), '', $user->photo_url);
             Storage::disk('public')->delete($oldPath);
         }
 
-        // Upload new photo
         $path = $request->file('photo')->store('profiles', 'public');
         $photoUrl = Storage::url($path);
 
@@ -99,12 +94,12 @@ class UserController extends Controller
     /**
      * Delete profile photo
      */
-    public function deletePhoto(Request $request)
+    public function deletePhoto()
     {
-        $user = $request->user();
+        $user = Auth::user();
 
         if ($user->photo_url) {
-            $oldPath = str_replace(Storage::url(''), '', $user->photo_url); // Penyesuaian: pastikan hanya path relatif yang dihapus
+            $oldPath = str_replace(Storage::url(''), '', $user->photo_url);
             Storage::disk('public')->delete($oldPath);
 
             $user->update(['photo_url' => null]);
@@ -119,14 +114,11 @@ class UserController extends Controller
     /**
      * Get user statistics
      */
-    public function statistics(Request $request)
+    public function statistics()
     {
-        $user = $request->user();
+        $user = Auth::user();
+        $books = $user->books()->with(['transactions', 'wallets'])->get();
 
-        // Get all books
-        $books = $user->books()->with('transactions')->get();
-
-        // Calculate total income and expense
         $totalIncome = 0;
         $totalExpense = 0;
         $transactionCount = 0;
@@ -139,7 +131,6 @@ class UserController extends Controller
 
         $balance = $totalIncome - $totalExpense;
 
-        // Get wallet balances
         $wallets = [];
         foreach ($books as $book) {
             foreach ($book->wallets as $wallet) {
@@ -166,11 +157,11 @@ class UserController extends Controller
     }
 
     /**
-     * Update user preferences (untuk settings seperti currency, language, dll)
+     * Update user preferences
      */
     public function updatePreferences(Request $request)
     {
-        $user = $request->user();
+        $user = Auth::user();
 
         $validated = $request->validate([
             'currency' => 'sometimes|string|max:10',
@@ -179,12 +170,9 @@ class UserController extends Controller
             'notifications_enabled' => 'sometimes|boolean',
         ]);
 
-        // Simpan preferences sebagai JSON (perlu tambah column preferences di migration)
         $preferences = $user->preferences ?? [];
         $preferences = array_merge($preferences, $validated);
 
-        // Catatan: Jika 'preferences' belum ada di kolom migration dan fillable, ini akan gagal.
-        // Asumsi: Anda akan menambahkan kolom 'preferences' (json) ke tabel 'users' jika diperlukan.
         $user->update(['preferences' => $preferences]);
 
         return response()->json([
@@ -197,11 +185,11 @@ class UserController extends Controller
     }
 
     /**
-     * Get user preferences
+     * Get preferences
      */
-    public function getPreferences(Request $request)
+    public function getPreferences()
     {
-        $user = $request->user();
+        $user = Auth::user();
 
         return response()->json([
             'success' => true,
@@ -216,13 +204,10 @@ class UserController extends Controller
      */
     public function deleteAccount(Request $request)
     {
-        $request->validate([
-            'password' => 'required',
-        ]);
+        $request->validate(['password' => 'required']);
 
-        $user = $request->user();
+        $user = Auth::user();
 
-        // Verify password
         if (!Hash::check($request->password, $user->password)) {
             return response()->json([
                 'success' => false,
@@ -230,25 +215,21 @@ class UserController extends Controller
             ], 403);
         }
 
-        // Delete profile photo if exists
         if ($user->photo_url) {
-            $oldPath = str_replace(Storage::url(''), '', $user->photo_url); // Penyesuaian: pastikan hanya path relatif yang dihapus
+            $oldPath = str_replace(Storage::url(''), '', $user->photo_url);
             Storage::disk('public')->delete($oldPath);
         }
 
-        // Delete all transaction images
-        // Perlu memuat relasi transactions pada books
         $user->load('books.transactions');
         foreach ($user->books as $book) {
-            foreach ($book->transactions as $transaction) {
-                if ($transaction->image_url) {
-                    $oldPath = str_replace(Storage::url(''), '', $transaction->image_url); // Penyesuaian: pastikan hanya path relatif yang dihapus
+            foreach ($book->transactions as $t) {
+                if ($t->image_url) {
+                    $oldPath = str_replace(Storage::url(''), '', $t->image_url);
                     Storage::disk('public')->delete($oldPath);
                 }
             }
         }
 
-        // Delete user (cascade akan hapus books, wallets, categories, transactions)
         $user->delete();
 
         return response()->json([
@@ -258,11 +239,10 @@ class UserController extends Controller
     }
 
     /**
-     * Get all users (admin only - optional)
+     * Get all users (Admin only)
      */
     public function index()
     {
-        // TODO: Add admin check middleware
         $users = User::withCount(['books'])->paginate(15);
 
         return response()->json([
@@ -272,11 +252,10 @@ class UserController extends Controller
     }
 
     /**
-     * Get single user (admin only - optional)
+     * Single user show (Admin only)
      */
     public function show(User $user)
     {
-        // TODO: Add admin check middleware
         $user->load(['books.wallets', 'books.categories']);
 
         return response()->json([
@@ -285,3 +264,4 @@ class UserController extends Controller
         ]);
     }
 }
+

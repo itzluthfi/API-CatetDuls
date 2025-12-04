@@ -24,6 +24,8 @@ class Category extends Model
         'created_at_ts' => 'integer',
     ];
 
+    
+
     public function book()
     {
         return $this->belongsTo(Book::class);
