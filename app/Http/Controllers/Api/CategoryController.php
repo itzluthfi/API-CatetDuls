@@ -9,47 +9,80 @@ use App\Models\Book;
 use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CategoryController extends Controller
 {
+    public function publicIndex()
+    {
+        return response()->json([
+            'success' => true,
+            'data' => Category::all()
+        ]);
+    }
+
+
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
+        // --- 1. Ambil Parameter dari Request ---
         $bookId = $request->query('book_id');
         $type = $request->query('type'); // PEMASUKAN / PENGELUARAN
+        $userId = Auth::id(); // Dapatkan ID pengguna yang sedang login
 
-        $query = Category::query();
 
-        if ($bookId) {
-            $book = Book::find($bookId);
-            if (!$book || $book->user_id !== Auth::id()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
+        // --- 2. Inisiasi Query Builder ---
+        $query = DB::table('categories')
+            ->select('categories.*'); // Pilih semua kolom dari tabel categories
+
+        try {
+            // --- 3. LOGIC FILTERING ---
+
+            if ($bookId) {
+                // A. FILTER BERDASARKAN book_id (VERIFIKASI KEPEMILIKAN DULU)
+                $book = Book::find($bookId);
+
+                // Cek apakah buku ditemukan DAN milik pengguna yang login
+                if (!$book || $book->user_id !== $userId) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized or Book not found'
+                    ], 403);
+                }
+
+                // Tambahkan kondisi WHERE
+                $query->where('categories.book_id', $bookId);
+            } else {
+                // B. FILTER KATEGORI DARI SEMUA BUKU MILIK PENGGUNA SAAT INI
+
+                // Join dengan tabel books untuk memfilter berdasarkan user_id
+                $query->join('books', 'categories.book_id', '=', 'books.id')
+                    ->where('books.user_id', $userId);
             }
-            $query->where('book_id', $bookId);
-        } else {
-            // Get categories from user's books
-            $query->whereHas('book', function ($q) {
-                $q->where('user_id', Auth::id());
-            });
+
+            // C. FILTER BERDASARKAN TYPE (PEMASUKAN / PENGELUARAN)
+            if ($type) {
+                $query->where('categories.type', $type);
+            }
+
+            // --- 4. Eksekusi Query ---
+            $categories = $query->orderBy('name')->get();
+
+            // --- 5. Berhasil ---
+            return response()->json([
+                'success' => true,
+                'data' => $categories
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while fetching data.',
+                'error_details' => $e->getMessage() // Sertakan detail error untuk debugging (Hapus di mode Production!)
+            ], 500);
         }
-
-        if ($type) {
-            $query->where('type', $type);
-        }
-
-        $categories = $query->orderBy('name')->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => $categories
-        ]);
     }
-
     /**
      * Store a newly created resource in storage.
      */
