@@ -3,14 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-
-
-use App\Models\Book;
-use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use Exception;
 
 class TransactionController extends Controller
 {
@@ -19,68 +17,123 @@ class TransactionController extends Controller
      */
     public function index(Request $request)
     {
-        $bookId = $request->query('book_id');
-        $walletId = $request->query('wallet_id');
-        $categoryId = $request->query('category_id');
-        $type = $request->query('type'); // PEMASUKAN / PENGELUARAN
-        $startDate = $request->query('start_date'); // timestamp ms
-        $endDate = $request->query('end_date'); // timestamp ms
-        $search = $request->query('search');
-        $perPage = $request->query('per_page', 15);
+        try {
+            $bookId = $request->query('book_id');
+            $walletId = $request->query('wallet_id');
+            $categoryId = $request->query('category_id');
+            $type = $request->query('type');
+            $startDate = $request->query('start_date');
+            $endDate = $request->query('end_date');
+            $search = $request->query('search');
+            $perPage = $request->query('per_page', 15);
+            $page = $request->query('page', 1);
+            $userId = Auth::id();
 
-        $query = Transaction::with(['wallet', 'category']);
+            // Build WHERE conditions
+            $conditions = [];
+            $params = [];
 
-        // Filter by book
-        if ($bookId) {
-            $book = Book::find($bookId);
-            if (!$book || $book->user_id !== Auth::id()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
+            if ($bookId) {
+                // Check authorization
+                $book = DB::selectOne("
+                    SELECT * FROM books 
+                    WHERE id = ? AND user_id = ?
+                ", [$bookId, $userId]);
+
+                if (!$book) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized or book not found'
+                    ], 403);
+                }
+
+                $conditions[] = "t.book_id = ?";
+                $params[] = $bookId;
+            } else {
+                // Get transactions from user's books only
+                $conditions[] = "b.user_id = ?";
+                $params[] = $userId;
             }
-            $query->where('book_id', $bookId);
-        } else {
-            // Get transactions from user's books
-            $query->whereHas('book', function ($q) {
-                $q->where('user_id', Auth::id());
-            });
+
+            if ($walletId) {
+                $conditions[] = "t.wallet_id = ?";
+                $params[] = $walletId;
+            }
+
+            if ($categoryId) {
+                $conditions[] = "t.category_id = ?";
+                $params[] = $categoryId;
+            }
+
+            if ($type) {
+                $conditions[] = "t.type = ?";
+                $params[] = $type;
+            }
+
+            if ($startDate && $endDate) {
+                $conditions[] = "t.created_at_ms BETWEEN ? AND ?";
+                $params[] = $startDate;
+                $params[] = $endDate;
+            }
+
+            if ($search) {
+                $conditions[] = "t.note LIKE ?";
+                $params[] = '%' . $search . '%';
+            }
+
+            $whereClause = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+            // Get total count
+            $totalQuery = "
+                SELECT COUNT(*) as total
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                $whereClause
+            ";
+            $total = DB::selectOne($totalQuery, $params)->total;
+
+            // Get paginated data
+            $offset = ($page - 1) * $perPage;
+            $dataQuery = "
+                SELECT 
+                    t.*,
+                    w.name as wallet_name,
+                    w.type as wallet_type,
+                    c.name as category_name,
+                    c.type as category_type,
+                    c.color as category_color,
+                    c.icon as category_icon
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                LEFT JOIN wallets w ON t.wallet_id = w.id
+                LEFT JOIN categories c ON t.category_id = c.id
+                $whereClause
+                ORDER BY t.created_at_ms DESC
+                LIMIT ? OFFSET ?
+            ";
+            $params[] = $perPage;
+            $params[] = $offset;
+
+            $transactions = DB::select($dataQuery, $params);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'data' => $transactions,
+                    'current_page' => (int)$page,
+                    'per_page' => (int)$perPage,
+                    'total' => (int)$total,
+                    'last_page' => ceil($total / $perPage),
+                ]
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve transactions',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Filter by wallet
-        if ($walletId) {
-            $query->where('wallet_id', $walletId);
-        }
-
-        // Filter by category
-        if ($categoryId) {
-            $query->where('category_id', $categoryId);
-        }
-
-        // Filter by type
-        if ($type) {
-            $query->where('type', $type);
-        }
-
-        // Filter by date range
-        if ($startDate && $endDate) {
-            $query->whereBetween('created_at_ms', [$startDate, $endDate]);
-        }
-
-        // Search by note
-        if ($search) {
-            $query->where('note', 'like', '%' . $search . '%');
-        }
-
-        // Order by date desc
-        $query->orderBy('created_at_ms', 'desc');
-
-        $transactions = $query->paginate($perPage);
-
-        return response()->json([
-            'success' => true,
-            'data' => $transactions
-        ]);
     }
 
     /**
@@ -88,138 +141,326 @@ class TransactionController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'book_id' => 'required|exists:books,id',
-            'wallet_id' => 'required|exists:wallets,id',
-            'category_id' => 'required|exists:categories,id',
-            'type' => 'required|in:PEMASUKAN,PENGELUARAN',
-            'amount' => 'required|integer|min:0',
-            'note' => 'nullable|string|max:500',
-            'created_at_ms' => 'nullable|integer',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ]);
+        try {
+            $validated = $request->validate([
+                'book_id' => 'required|exists:books,id',
+                'wallet_id' => 'required|exists:wallets,id',
+                'category_id' => 'required|exists:categories,id',
+                'type' => 'required|in:PEMASUKAN,PENGELUARAN',
+                'amount' => 'required|integer|min:0',
+                'note' => 'nullable|string|max:500',
+                'created_at_ms' => 'nullable|integer',
+                'image' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            ]);
 
-        // Check authorization
-        $book = Book::find($validated['book_id']);
-        if ($book->user_id !== Auth::id()) {
+            $userId = Auth::id();
+
+            // Check authorization
+            $book = DB::selectOne("
+                SELECT * FROM books 
+                WHERE id = ? AND user_id = ?
+            ", [$validated['book_id'], $userId]);
+
+            if (!$book) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized or book not found'
+                ], 403);
+            }
+
+            DB::beginTransaction();
+
+            // Set timestamp jika tidak ada
+            if (!isset($validated['created_at_ms'])) {
+                $validated['created_at_ms'] = round(microtime(true) * 1000);
+            }
+
+            // Handle image upload
+            $imageUrl = null;
+            if ($request->hasFile('image')) {
+                $path = $request->file('image')->store('transactions', 'public');
+                $imageUrl = Storage::url($path);
+            }
+
+            // Insert transaction
+            $transactionId = DB::table('transactions')->insertGetId([
+                'book_id' => $validated['book_id'],
+                'wallet_id' => $validated['wallet_id'],
+                'category_id' => $validated['category_id'],
+                'type' => $validated['type'],
+                'amount' => $validated['amount'],
+                'note' => $validated['note'] ?? null,
+                'created_at_ms' => $validated['created_at_ms'],
+                'image_url' => $imageUrl,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Get created transaction with relations
+            $transaction = DB::selectOne("
+                SELECT 
+                    t.*,
+                    w.name as wallet_name,
+                    c.name as category_name
+                FROM transactions t
+                LEFT JOIN wallets w ON t.wallet_id = w.id
+                LEFT JOIN categories c ON t.category_id = c.id
+                WHERE t.id = ?
+            ", [$transactionId]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaction created successfully',
+                'data' => $transaction
+            ], 201);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create transaction',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Set timestamp jika tidak ada
-        if (!isset($validated['created_at_ms'])) {
-            $validated['created_at_ms'] = round(microtime(true) * 1000);
-        }
-
-        // Handle image upload
-        if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('transactions', 'public');
-            $validated['image_url'] = Storage::url($path);
-        }
-
-        $transaction = Transaction::create($validated);
-        $transaction->load(['wallet', 'category']);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Transaction created successfully',
-            'data' => $transaction
-        ], 201);
     }
 
     /**
      * Display the specified transaction
      */
-    public function show(Transaction $transaction)
+    public function show($id)
     {
-        // Authorization
-        if ($transaction->book->user_id !== Auth::id()) {
+        try {
+            $userId = Auth::id();
+
+            // Get transaction with authorization check
+            $transaction = DB::selectOne("
+                SELECT 
+                    t.*,
+                    w.name as wallet_name,
+                    w.type as wallet_type,
+                    c.name as category_name,
+                    c.type as category_type,
+                    c.color as category_color,
+                    b.name as book_name
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                LEFT JOIN wallets w ON t.wallet_id = w.id
+                LEFT JOIN categories c ON t.category_id = c.id
+                WHERE t.id = ? AND b.user_id = ?
+            ", [$id, $userId]);
+
+            if (!$transaction) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction not found or unauthorized'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $transaction
+            ]);
+
+        } catch (Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
+                'message' => 'Failed to retrieve transaction',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $transaction->load(['wallet', 'category', 'book']);
-
-        return response()->json([
-            'success' => true,
-            'data' => $transaction
-        ]);
     }
 
     /**
      * Update the specified transaction
      */
-    public function update(Request $request, Transaction $transaction)
+    public function update(Request $request, $id)
     {
-        // Authorization
-        if ($transaction->book->user_id !== Auth::id()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
-        }
+        try {
+            $userId = Auth::id();
 
-        $validated = $request->validate([
-            'wallet_id' => 'sometimes|exists:wallets,id',
-            'category_id' => 'sometimes|exists:categories,id',
-            'type' => 'sometimes|in:PEMASUKAN,PENGELUARAN',
-            'amount' => 'sometimes|integer|min:0',
-            'note' => 'nullable|string|max:500',
-            'created_at_ms' => 'sometimes|integer',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ]);
+            // Check authorization
+            $transaction = DB::selectOne("
+                SELECT t.*
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                WHERE t.id = ? AND b.user_id = ?
+            ", [$id, $userId]);
 
-        // Handle image upload
-        if ($request->hasFile('image')) {
-            // Delete old image if exists
-            if ($transaction->image_url) {
-                $oldPath = str_replace('/storage/', '', $transaction->image_url);
-                Storage::disk('public')->delete($oldPath);
+            if (!$transaction) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction not found or unauthorized'
+                ], 404);
             }
 
-            $path = $request->file('image')->store('transactions', 'public');
-            $validated['image_url'] = Storage::url($path);
+            $validated = $request->validate([
+                'wallet_id' => 'sometimes|exists:wallets,id',
+                'category_id' => 'sometimes|exists:categories,id',
+                'type' => 'sometimes|in:PEMASUKAN,PENGELUARAN',
+                'amount' => 'sometimes|integer|min:0',
+                'note' => 'nullable|string|max:500',
+                'created_at_ms' => 'sometimes|integer',
+                'image' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            ]);
+
+            DB::beginTransaction();
+
+            // Handle image upload
+            $imageUrl = null;
+            if ($request->hasFile('image')) {
+                // Delete old image if exists
+                if ($transaction->image_url) {
+                    $oldPath = str_replace('/storage/', '', $transaction->image_url);
+                    Storage::disk('public')->delete($oldPath);
+                }
+
+                $path = $request->file('image')->store('transactions', 'public');
+                $imageUrl = Storage::url($path);
+            }
+
+            // Build update query dynamically
+            $updateFields = [];
+            $params = [];
+
+            if (isset($validated['wallet_id'])) {
+                $updateFields[] = "wallet_id = ?";
+                $params[] = $validated['wallet_id'];
+            }
+            if (isset($validated['category_id'])) {
+                $updateFields[] = "category_id = ?";
+                $params[] = $validated['category_id'];
+            }
+            if (isset($validated['type'])) {
+                $updateFields[] = "type = ?";
+                $params[] = $validated['type'];
+            }
+            if (isset($validated['amount'])) {
+                $updateFields[] = "amount = ?";
+                $params[] = $validated['amount'];
+            }
+            if (array_key_exists('note', $validated)) {
+                $updateFields[] = "note = ?";
+                $params[] = $validated['note'];
+            }
+            if (isset($validated['created_at_ms'])) {
+                $updateFields[] = "created_at_ms = ?";
+                $params[] = $validated['created_at_ms'];
+            }
+            if ($imageUrl) {
+                $updateFields[] = "image_url = ?";
+                $params[] = $imageUrl;
+            }
+
+            $updateFields[] = "updated_at = ?";
+            $params[] = now();
+            $params[] = $id;
+
+            if (!empty($updateFields)) {
+                DB::update("
+                    UPDATE transactions 
+                    SET " . implode(', ', $updateFields) . "
+                    WHERE id = ?
+                ", $params);
+            }
+
+            // Get updated transaction
+            $updatedTransaction = DB::selectOne("
+                SELECT 
+                    t.*,
+                    w.name as wallet_name,
+                    c.name as category_name
+                FROM transactions t
+                LEFT JOIN wallets w ON t.wallet_id = w.id
+                LEFT JOIN categories c ON t.category_id = c.id
+                WHERE t.id = ?
+            ", [$id]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaction updated successfully',
+                'data' => $updatedTransaction
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update transaction',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $transaction->update($validated);
-        $transaction->load(['wallet', 'category']);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Transaction updated successfully',
-            'data' => $transaction
-        ]);
     }
 
     /**
      * Remove the specified transaction
      */
-    public function destroy(Transaction $transaction)
+    public function destroy($id)
     {
-        // Authorization
-        if ($transaction->book->user_id !== Auth::id()) {
+        try {
+            $userId = Auth::id();
+
+            // Check authorization
+            $transaction = DB::selectOne("
+                SELECT t.*
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                WHERE t.id = ? AND b.user_id = ?
+            ", [$id, $userId]);
+
+            if (!$transaction) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction not found or unauthorized'
+                ], 404);
+            }
+
+            DB::beginTransaction();
+
+            // Delete image if exists
+            if ($transaction->image_url) {
+                $oldPath = str_replace('/storage/', '', $transaction->image_url);
+                Storage::disk('public')->delete($oldPath);
+            }
+
+            // Delete transaction
+            DB::delete("
+                DELETE FROM transactions 
+                WHERE id = ?
+            ", [$id]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaction deleted successfully'
+            ]);
+
+        } catch (Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized'
-            ], 403);
+                'message' => 'Failed to delete transaction',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Delete image if exists
-        if ($transaction->image_url) {
-            $oldPath = str_replace('/storage/', '', $transaction->image_url);
-            Storage::disk('public')->delete($oldPath);
-        }
-
-        $transaction->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Transaction deleted successfully'
-        ]);
     }
 
     /**
@@ -227,51 +468,79 @@ class TransactionController extends Controller
      */
     public function summary(Request $request)
     {
-        $bookId = $request->query('book_id');
-        $walletId = $request->query('wallet_id');
-        $startDate = $request->query('start_date');
-        $endDate = $request->query('end_date');
+        try {
+            $bookId = $request->query('book_id');
+            $walletId = $request->query('wallet_id');
+            $startDate = $request->query('start_date');
+            $endDate = $request->query('end_date');
+            $userId = Auth::id();
 
-        $query = Transaction::query();
+            // Build WHERE conditions
+            $conditions = [];
+            $params = [];
 
-        // Filter by book
-        if ($bookId) {
-            $book = Book::find($bookId);
-            if (!$book || $book->user_id !== Auth::id()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
+            if ($bookId) {
+                // Check authorization
+                $book = DB::selectOne("
+                    SELECT * FROM books 
+                    WHERE id = ? AND user_id = ?
+                ", [$bookId, $userId]);
+
+                if (!$book) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized or book not found'
+                    ], 403);
+                }
+
+                $conditions[] = "t.book_id = ?";
+                $params[] = $bookId;
+            } else {
+                $conditions[] = "b.user_id = ?";
+                $params[] = $userId;
             }
-            $query->where('book_id', $bookId);
-        } else {
-            $query->whereHas('book', function ($q) {
-                $q->where('user_id', Auth::id());
-            });
+
+            if ($walletId) {
+                $conditions[] = "t.wallet_id = ?";
+                $params[] = $walletId;
+            }
+
+            if ($startDate && $endDate) {
+                $conditions[] = "t.created_at_ms BETWEEN ? AND ?";
+                $params[] = $startDate;
+                $params[] = $endDate;
+            }
+
+            $whereClause = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+            // Get summary
+            $summary = DB::selectOne("
+                SELECT 
+                    COALESCE(SUM(CASE WHEN t.type = 'PEMASUKAN' THEN t.amount ELSE 0 END), 0) as income,
+                    COALESCE(SUM(CASE WHEN t.type = 'PENGELUARAN' THEN t.amount ELSE 0 END), 0) as expense
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                $whereClause
+            ", $params);
+
+            $balance = $summary->income - $summary->expense;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'income' => (int)$summary->income,
+                    'expense' => (int)$summary->expense,
+                    'balance' => (int)$balance,
+                ]
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get summary',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Filter by wallet
-        if ($walletId) {
-            $query->where('wallet_id', $walletId);
-        }
-
-        // Filter by date range
-        if ($startDate && $endDate) {
-            $query->whereBetween('created_at_ms', [$startDate, $endDate]);
-        }
-
-        $income = (clone $query)->where('type', 'PEMASUKAN')->sum('amount');
-        $expense = (clone $query)->where('type', 'PENGELUARAN')->sum('amount');
-        $balance = $income - $expense;
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'income' => $income,
-                'expense' => $expense,
-                'balance' => $balance,
-            ]
-        ]);
     }
 
     /**
@@ -279,52 +548,81 @@ class TransactionController extends Controller
      */
     public function byCategory(Request $request)
     {
-        $bookId = $request->query('book_id');
-        $type = $request->query('type');
-        $startDate = $request->query('start_date');
-        $endDate = $request->query('end_date');
+        try {
+            $bookId = $request->query('book_id');
+            $type = $request->query('type');
+            $startDate = $request->query('start_date');
+            $endDate = $request->query('end_date');
+            $userId = Auth::id();
 
-        $query = Transaction::select(
-            'category_id',
-            DB::raw('SUM(amount) as total_amount'),
-            DB::raw('COUNT(*) as transaction_count')
-        )
-            ->with('category');
+            // Build WHERE conditions
+            $conditions = [];
+            $params = [];
 
-        // Filter by book
-        if ($bookId) {
-            $book = Book::find($bookId);
-            if (!$book || $book->user_id !== Auth::id()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
+            if ($bookId) {
+                // Check authorization
+                $book = DB::selectOne("
+                    SELECT * FROM books 
+                    WHERE id = ? AND user_id = ?
+                ", [$bookId, $userId]);
+
+                if (!$book) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized or book not found'
+                    ], 403);
+                }
+
+                $conditions[] = "t.book_id = ?";
+                $params[] = $bookId;
+            } else {
+                $conditions[] = "b.user_id = ?";
+                $params[] = $userId;
             }
-            $query->where('book_id', $bookId);
-        } else {
-            $query->whereHas('book', function ($q) {
-                $q->where('user_id', Auth::id());
-            });
+
+            if ($type) {
+                $conditions[] = "t.type = ?";
+                $params[] = $type;
+            }
+
+            if ($startDate && $endDate) {
+                $conditions[] = "t.created_at_ms BETWEEN ? AND ?";
+                $params[] = $startDate;
+                $params[] = $endDate;
+            }
+
+            $whereClause = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+            // Get grouped data
+            $data = DB::select("
+                SELECT 
+                    t.category_id,
+                    c.name as category_name,
+                    c.type as category_type,
+                    c.color as category_color,
+                    c.icon as category_icon,
+                    SUM(t.amount) as total_amount,
+                    COUNT(*) as transaction_count
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                LEFT JOIN categories c ON t.category_id = c.id
+                $whereClause
+                GROUP BY t.category_id, c.name, c.type, c.color, c.icon
+                ORDER BY total_amount DESC
+            ", $params);
+
+            return response()->json([
+                'success' => true,
+                'data' => $data
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get transactions by category',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Filter by type
-        if ($type) {
-            $query->where('type', $type);
-        }
-
-        // Filter by date range
-        if ($startDate && $endDate) {
-            $query->whereBetween('created_at_ms', [$startDate, $endDate]);
-        }
-
-        $data = $query->groupBy('category_id')
-            ->orderBy('total_amount', 'desc')
-            ->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => $data
-        ]);
     }
 
     /**
@@ -332,50 +630,89 @@ class TransactionController extends Controller
      */
     public function byDate(Request $request)
     {
-        $bookId = $request->query('book_id');
-        $walletId = $request->query('wallet_id');
-        $startDate = $request->query('start_date');
-        $endDate = $request->query('end_date');
+        try {
+            $bookId = $request->query('book_id');
+            $walletId = $request->query('wallet_id');
+            $startDate = $request->query('start_date');
+            $endDate = $request->query('end_date');
+            $userId = Auth::id();
 
-        $query = Transaction::with(['wallet', 'category']);
+            // Build WHERE conditions
+            $conditions = [];
+            $params = [];
 
-        // Filter by book
-        if ($bookId) {
-            $book = Book::find($bookId);
-            if (!$book || $book->user_id !== Auth::id()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
+            if ($bookId) {
+                // Check authorization
+                $book = DB::selectOne("
+                    SELECT * FROM books 
+                    WHERE id = ? AND user_id = ?
+                ", [$bookId, $userId]);
+
+                if (!$book) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized or book not found'
+                    ], 403);
+                }
+
+                $conditions[] = "t.book_id = ?";
+                $params[] = $bookId;
+            } else {
+                $conditions[] = "b.user_id = ?";
+                $params[] = $userId;
             }
-            $query->where('book_id', $bookId);
-        } else {
-            $query->whereHas('book', function ($q) {
-                $q->where('user_id', Auth::id());
-            });
+
+            if ($walletId) {
+                $conditions[] = "t.wallet_id = ?";
+                $params[] = $walletId;
+            }
+
+            if ($startDate && $endDate) {
+                $conditions[] = "t.created_at_ms BETWEEN ? AND ?";
+                $params[] = $startDate;
+                $params[] = $endDate;
+            }
+
+            $whereClause = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+            // Get transactions
+            $transactions = DB::select("
+                SELECT 
+                    t.*,
+                    w.name as wallet_name,
+                    c.name as category_name,
+                    c.color as category_color,
+                    DATE(FROM_UNIXTIME(t.created_at_ms / 1000)) as transaction_date
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                LEFT JOIN wallets w ON t.wallet_id = w.id
+                LEFT JOIN categories c ON t.category_id = c.id
+                $whereClause
+                ORDER BY t.created_at_ms DESC
+            ", $params);
+
+            // Group by date in PHP
+            $grouped = [];
+            foreach ($transactions as $transaction) {
+                $date = $transaction->transaction_date;
+                if (!isset($grouped[$date])) {
+                    $grouped[$date] = [];
+                }
+                $grouped[$date][] = $transaction;
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $grouped
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get transactions by date',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Filter by wallet
-        if ($walletId) {
-            $query->where('wallet_id', $walletId);
-        }
-
-        // Filter by date range
-        if ($startDate && $endDate) {
-            $query->whereBetween('created_at_ms', [$startDate, $endDate]);
-        }
-
-        $transactions = $query->orderBy('created_at_ms', 'desc')->get();
-
-        // Group by date
-        $grouped = $transactions->groupBy(function ($transaction) {
-            return date('Y-m-d', $transaction->created_at_ms / 1000);
-        });
-
-        return response()->json([
-            'success' => true,
-            'data' => $grouped
-        ]);
     }
 
     /**
@@ -383,37 +720,69 @@ class TransactionController extends Controller
      */
     public function bulkDelete(Request $request)
     {
-        $validated = $request->validate([
-            'transaction_ids' => 'required|array',
-            'transaction_ids.*' => 'exists:transactions,id',
-        ]);
+        try {
+            $validated = $request->validate([
+                'transaction_ids' => 'required|array',
+                'transaction_ids.*' => 'exists:transactions,id',
+            ]);
 
-        $transactions = Transaction::whereIn('id', $validated['transaction_ids'])
-            ->whereHas('book', function ($q) {
-                $q->where('user_id', Auth::id());
-            })
-            ->get();
+            $userId = Auth::id();
+            $ids = $validated['transaction_ids'];
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
 
-        if ($transactions->count() !== count($validated['transaction_ids'])) {
+            // Get transactions with authorization check
+            $params = array_merge($ids, [$userId]);
+            $transactions = DB::select("
+                SELECT t.*
+                FROM transactions t
+                INNER JOIN books b ON t.book_id = b.id
+                WHERE t.id IN ($placeholders) AND b.user_id = ?
+            ", $params);
+
+            if (count($transactions) !== count($ids)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Some transactions not found or unauthorized'
+                ], 403);
+            }
+
+            DB::beginTransaction();
+
+            // Delete images
+            foreach ($transactions as $transaction) {
+                if ($transaction->image_url) {
+                    $oldPath = str_replace('/storage/', '', $transaction->image_url);
+                    Storage::disk('public')->delete($oldPath);
+                }
+            }
+
+            // Delete transactions
+            DB::delete("
+                DELETE FROM transactions 
+                WHERE id IN ($placeholders)
+            ", $ids);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transactions deleted successfully'
+            ]);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Some transactions not found or unauthorized'
-            ], 403);
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete transactions',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Delete images
-        foreach ($transactions as $transaction) {
-            if ($transaction->image_url) {
-                $oldPath = str_replace('/storage/', '', $transaction->image_url);
-                Storage::disk('public')->delete($oldPath);
-            }
-        }
-
-        Transaction::whereIn('id', $validated['transaction_ids'])->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Transactions deleted successfully'
-        ]);
     }
 }
