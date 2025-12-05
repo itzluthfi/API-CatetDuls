@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 
 
 use App\Models\Book;
+use App\Models\User;
 use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -27,24 +28,18 @@ class CategoryController extends Controller
      */
     public function index(Request $request)
     {
-        // --- 1. Ambil Parameter dari Request ---
         $bookId = $request->query('book_id');
-        $type = $request->query('type'); // PEMASUKAN / PENGELUARAN
-        $userId = Auth::id(); // Dapatkan ID pengguna yang sedang login
+        $type = $request->query('type');
+        $userId = Auth::id();
 
-
-        // --- 2. Inisiasi Query Builder ---
         $query = DB::table('categories')
-            ->select('categories.*'); // Pilih semua kolom dari tabel categories
+            ->select('categories.*');
 
         try {
-            // --- 3. LOGIC FILTERING ---
 
             if ($bookId) {
-                // A. FILTER BERDASARKAN book_id (VERIFIKASI KEPEMILIKAN DULU)
                 $book = Book::find($bookId);
 
-                // Cek apakah buku ditemukan DAN milik pengguna yang login
                 if (!$book || $book->user_id !== $userId) {
                     return response()->json([
                         'success' => false,
@@ -52,25 +47,19 @@ class CategoryController extends Controller
                     ], 403);
                 }
 
-                // Tambahkan kondisi WHERE
                 $query->where('categories.book_id', $bookId);
             } else {
-                // B. FILTER KATEGORI DARI SEMUA BUKU MILIK PENGGUNA SAAT INI
 
-                // Join dengan tabel books untuk memfilter berdasarkan user_id
                 $query->join('books', 'categories.book_id', '=', 'books.id')
                     ->where('books.user_id', $userId);
             }
 
-            // C. FILTER BERDASARKAN TYPE (PEMASUKAN / PENGELUARAN)
             if ($type) {
                 $query->where('categories.type', $type);
             }
 
-            // --- 4. Eksekusi Query ---
             $categories = $query->orderBy('name')->get();
 
-            // --- 5. Berhasil ---
             return response()->json([
                 'success' => true,
                 'data' => $categories
@@ -79,7 +68,7 @@ class CategoryController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'An error occurred while fetching data.',
-                'error_details' => $e->getMessage() // Sertakan detail error untuk debugging (Hapus di mode Production!)
+                'error_details' => $e->getMessage()
             ], 500);
         }
     }
