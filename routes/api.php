@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\TransactionController;
 |--------------------------------------------------------------------------
 */
 
+
 // ===================================
 // PUBLIC ROUTES
 // ===================================
@@ -23,6 +24,12 @@ Route::prefix('auth')->group(function () {
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
+
+Route::options('/{any}', function () {
+    return response()->json();
+})->where('any', '.*');
+
+Route::get('/pub-categories', [CategoryController::class, 'publicIndex']);
 
 // ===================================
 // PROTECTED ROUTES (AUTH REQUIRED)
@@ -119,5 +126,4 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/by-date', [TransactionController::class, 'byDate']);
         Route::post('/bulk-delete', [TransactionController::class, 'bulkDelete']);
     });
-
 });

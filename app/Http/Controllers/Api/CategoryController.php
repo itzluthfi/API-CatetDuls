@@ -5,91 +5,84 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
+use App\Models\Category;
+use App\Models\Book;
 use Exception;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 
 class CategoryController extends Controller
 {
+    public function publicIndex()
+    {
+        return response()->json([
+            'success' => true,
+            'data' => Category::all()
+        ]);
+    }
+
+
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
+        // --- 1. Ambil Parameter dari Request ---
+        $bookId = $request->query('book_id');
+        $type = $request->query('type'); // PEMASUKAN / PENGELUARAN
+        $userId = Auth::id(); // Dapatkan ID pengguna yang sedang login
+
+
+        // --- 2. Inisiasi Query Builder ---
+        $query = DB::table('categories')
+            ->select('categories.*'); // Pilih semua kolom dari tabel categories
+
         try {
-            $bookId = $request->query('book_id');
-            $type = $request->query('type'); // PEMASUKAN / PENGELUARAN
-            $userId = Auth::id();
+            // --- 3. LOGIC FILTERING ---
 
             if ($bookId) {
-                // Check authorization
-                $book = DB::selectOne("
-                    SELECT * FROM books 
-                    WHERE id = ? AND user_id = ?
-                ", [$bookId, $userId]);
+                // A. FILTER BERDASARKAN book_id (VERIFIKASI KEPEMILIKAN DULU)
+                $book = Book::find($bookId);
 
-                if (!$book) {
+                // Cek apakah buku ditemukan DAN milik pengguna yang login
+                if (!$book || $book->user_id !== $userId) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Unauthorized or book not found'
+                        'message' => 'Unauthorized or Book not found'
                     ], 403);
                 }
 
-                // Get categories by book_id
-                if ($type) {
-                    $categories = DB::select("
-                        SELECT c.*,
-                            (SELECT COUNT(*) FROM transactions t WHERE t.category_id = c.id) as transactions_count
-                        FROM categories c
-                        WHERE c.book_id = ? AND c.type = ?
-                        ORDER BY c.name
-                    ", [$bookId, $type]);
-                } else {
-                    $categories = DB::select("
-                        SELECT c.*,
-                            (SELECT COUNT(*) FROM transactions t WHERE t.category_id = c.id) as transactions_count
-                        FROM categories c
-                        WHERE c.book_id = ?
-                        ORDER BY c.name
-                    ", [$bookId]);
-                }
+                // Tambahkan kondisi WHERE
+                $query->where('categories.book_id', $bookId);
             } else {
-                // Get categories from user's books
-                if ($type) {
-                    $categories = DB::select("
-                        SELECT c.*,
-                            (SELECT COUNT(*) FROM transactions t WHERE t.category_id = c.id) as transactions_count
-                        FROM categories c
-                        INNER JOIN books b ON c.book_id = b.id
-                        WHERE b.user_id = ? AND c.type = ?
-                        ORDER BY c.name
-                    ", [$userId, $type]);
-                } else {
-                    $categories = DB::select("
-                        SELECT c.*,
-                            (SELECT COUNT(*) FROM transactions t WHERE t.category_id = c.id) as transactions_count
-                        FROM categories c
-                        INNER JOIN books b ON c.book_id = b.id
-                        WHERE b.user_id = ?
-                        ORDER BY c.name
-                    ", [$userId]);
-                }
+                // B. FILTER KATEGORI DARI SEMUA BUKU MILIK PENGGUNA SAAT INI
+
+                // Join dengan tabel books untuk memfilter berdasarkan user_id
+                $query->join('books', 'categories.book_id', '=', 'books.id')
+                    ->where('books.user_id', $userId);
             }
 
+            // C. FILTER BERDASARKAN TYPE (PEMASUKAN / PENGELUARAN)
+            if ($type) {
+                $query->where('categories.type', $type);
+            }
+
+            // --- 4. Eksekusi Query ---
+            $categories = $query->orderBy('name')->get();
+
+            // --- 5. Berhasil ---
             return response()->json([
                 'success' => true,
                 'data' => $categories
             ]);
-
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve categories',
-                'error' => $e->getMessage()
+                'message' => 'An error occurred while fetching data.',
+                'error_details' => $e->getMessage() // Sertakan detail error untuk debugging (Hapus di mode Production!)
             ], 500);
         }
     }
-
     /**
      * Store a newly created resource in storage.
      */
