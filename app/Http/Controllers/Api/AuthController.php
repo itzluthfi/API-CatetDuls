@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-
-
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
@@ -18,86 +18,90 @@ class AuthController extends Controller
      * Register new user
      */
     public function register(Request $request)
-{
-    try {
-        DB::beginTransaction();
+    {
+        try {
+            DB::beginTransaction();
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
-        ]);
-
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-        ]);
-
-        $book = $user->books()->create([
-            'name' => 'Buku Utama',
-            'description' => 'Buku keuangan utama',
-            'icon' => '📖',
-            'color' => '#4CAF50',
-            'is_default' => true,
-        ]);
-
-        $book->wallets()->create([
-            'name' => 'Tunai',
-            'type' => 'CASH',
-            'icon' => '💵',
-            'color' => '#4CAF50',
-            'initial_balance' => 0,
-            'is_default' => true,
-        ]);
-
-        $categories = [
-            ['name' => 'Makanan & Minuman', 'icon' => '🍔', 'type' => 'PENGELUARAN'],
-            ['name' => 'Transport', 'icon' => '🚌', 'type' => 'PENGELUARAN'],
-            ['name' => 'Belanja', 'icon' => '🛒', 'type' => 'PENGELUARAN'],
-            ['name' => 'Hiburan', 'icon' => '🎮', 'type' => 'PENGELUARAN'],
-            ['name' => 'Lainnya (Pengeluaran)', 'icon' => '⚙️', 'type' => 'PENGELUARAN'],
-
-            ['name' => 'Gaji', 'icon' => '💼', 'type' => 'PEMASUKAN'],
-            ['name' => 'Bonus', 'icon' => '💰', 'type' => 'PEMASUKAN'],
-            ['name' => 'Lainnya (Pemasukan)', 'icon' => '⚙️', 'type' => 'PEMASUKAN'],
-        ];
-
-        foreach ($categories as $cat) {
-            $book->categories()->create([
-                'name' => $cat['name'],
-                'icon' => $cat['icon'],
-                'type' => $cat['type'],
-                'is_default' => true,
-                'created_at_ts' => time(),
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|string|email|max:255|unique:users',
+                'password' => 'required|string|min:8|confirmed',
             ]);
+
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+            ]);
+
+            $book = $user->books()->create([
+                'name' => 'Buku Utama',
+                'description' => 'Buku keuangan utama',
+                'icon' => '📖',
+                'color' => '#4CAF50',
+                'is_default' => true,
+            ]);
+
+            $book->wallets()->create([
+                'name' => 'Tunai',
+                'type' => 'CASH',
+                'icon' => '💵',
+                'color' => '#4CAF50',
+                'initial_balance' => 0,
+                'is_default' => true,
+            ]);
+
+            $categories = [
+                ['name' => 'Makanan & Minuman', 'icon' => '🍔', 'type' => 'PENGELUARAN'],
+                ['name' => 'Transport', 'icon' => '🚌', 'type' => 'PENGELUARAN'],
+                ['name' => 'Belanja', 'icon' => '🛒', 'type' => 'PENGELUARAN'],
+                ['name' => 'Hiburan', 'icon' => '🎮', 'type' => 'PENGELUARAN'],
+                ['name' => 'Lainnya (Pengeluaran)', 'icon' => '⚙️', 'type' => 'PENGELUARAN'],
+
+                ['name' => 'Gaji', 'icon' => '💼', 'type' => 'PEMASUKAN'],
+                ['name' => 'Bonus', 'icon' => '💰', 'type' => 'PEMASUKAN'],
+                ['name' => 'Lainnya (Pemasukan)', 'icon' => '⚙️', 'type' => 'PEMASUKAN'],
+            ];
+
+            foreach ($categories as $cat) {
+                $book->categories()->create([
+                    'name' => $cat['name'],
+                    'icon' => $cat['icon'],
+                    'type' => $cat['type'],
+                    'is_default' => true,
+                    'created_at_ts' => time(),
+                ]);
+            }
+
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User registered successfully',
+                'data' => [
+                    'user' => $user,
+                    'token' => $token,
+                    'token_type' => 'Bearer',
+                ]
+            ], 201);
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Registration failed,' . $e->getMessage(),
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        DB::commit();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'User registered successfully',
-            'data' => [
-                'user' => $user,
-                'token' => $token,
-                'token_type' => 'Bearer',
-            ]
-        ], 201);
-
-    } catch (\Throwable $e) {
-
-        DB::rollBack();
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Registration failed',
-            'error' => $e->getMessage(),
-        ], 500);
     }
-}
 
     /**
      * Login user
@@ -199,77 +203,126 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Change password
-     */
-    public function changePassword(Request $request)
-    {
-        $validated = $request->validate([
-            'current_password' => 'required',
-            'password' => 'required|string|min:8|confirmed',
-        ]);
-
-        $user = $request->user();
-
-        // Check current password
-        if (!Hash::check($validated['current_password'], $user->password)) {
-            throw ValidationException::withMessages([
-                'current_password' => ['The current password is incorrect.'],
-            ]);
-        }
-
-        // Update password
-        $user->update([
-            'password' => Hash::make($validated['password'])
-        ]);
-
-        // Delete all tokens (force re-login)
-        $user->tokens()->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Password changed successfully. Please login again.'
-        ]);
-    }
+    // ===================================================================
+    // ⭐ FORGOT PASSWORD - MENGGUNAKAN LINK RESET
+    // ===================================================================
 
     /**
-     * Forgot password - send reset link (placeholder)
+     * Kirim link reset password ke email user
+     * Endpoint: POST /api/auth/forgot-password
      */
     public function forgotPassword(Request $request)
     {
-        $request->validate([
-            'email' => 'required|email|exists:users,email',
-        ]);
+        // Validasi email
+        $request->validate(['email' => 'required|email']);
 
-        // TODO: Implement email sending logic
-        // Password::sendResetLink($request->only('email'));
+        // Cek apakah user dengan email tersebut ada
+        $user = User::where('email', $request->email)->first();
 
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email tidak terdaftar dalam sistem.'
+            ], 404);
+        }
+
+        // Kirim reset link menggunakan Laravel Password Broker
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        // Jika berhasil
+        if ($status === Password::RESET_LINK_SENT) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Link reset password telah dikirim ke email Anda. Silakan cek inbox atau spam folder.'
+            ], 200);
+        }
+
+        // Jika gagal
         return response()->json([
-            'success' => true,
-            'message' => 'Password reset link sent to your email'
+            'success' => false,
+            'message' => 'Gagal mengirim link reset password. ' . trans($status)
+        ], 400);
+    }
+
+    /**
+     * Tampilkan form request reset password (untuk Web)
+     * Route: GET /password/reset
+     */
+    public function showLinkRequestForm()
+    {
+        return view('auth.forgot-password');
+    }
+
+    /**
+     * Tampilkan form reset password (setelah klik link di email)
+     * Route: GET /password/reset/{token}
+     */
+    public function showResetForm(Request $request, $token = null)
+    {
+        return view('auth.reset-password', [
+            'token' => $token,
+            'email' => $request->email
         ]);
     }
 
     /**
-     * Reset password (placeholder)
+     * Handle proses reset password
+     * Endpoint: POST /password/reset
      */
     public function resetPassword(Request $request)
     {
-        $validated = $request->validate([
-            'email' => 'required|email|exists:users,email',
+        // Validasi input
+        $request->validate([
             'token' => 'required',
-            'password' => 'required|string|min:8|confirmed',
+            'email' => 'required|email',
+            'password' => 'required|confirmed|min:8',
         ]);
 
-        // TODO: Implement password reset logic
-        // Password::reset($validated, function ($user, $password) {
-        //     $user->password = Hash::make($password);
-        //     $user->save();
-        // });
+        // Reset password menggunakan Laravel Password Broker
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password)
+                ])->save();
 
+                // Delete all tokens (force re-login)
+                $user->tokens()->delete();
+            }
+        );
+
+        // Jika berhasil
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Password berhasil direset. Silakan login dengan password baru.'
+            ], 200);
+        }
+
+        // Jika gagal
         return response()->json([
-            'success' => true,
-            'message' => 'Password reset successful'
+            'success' => false,
+            'message' => 'Gagal mereset password. ' . trans($status)
+        ], 400);
+    }
+
+    /**
+     * Verify reset code (Optional - jika pakai kode OTP)
+     */
+    public function verifyResetCode(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'code' => 'required|string',
         ]);
+
+        // Implementasi verifikasi kode jika Anda menggunakan sistem OTP
+        // Untuk saat ini, return not implemented
+        return response()->json([
+            'success' => false,
+            'message' => 'Fitur verifikasi kode belum diimplementasikan. Gunakan link reset via email.'
+        ], 501);
     }
 }
