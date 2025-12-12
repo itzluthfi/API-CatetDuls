@@ -52,6 +52,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('user')->group(function () {
         Route::get('/profile', [UserController::class, 'profile']);
         Route::put('/profile', [UserController::class, 'updateProfile']);
+        
 
         Route::post('/photo', [UserController::class, 'uploadPhoto']);
         Route::delete('/photo', [UserController::class, 'deletePhoto']);
@@ -62,6 +63,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/preferences', [UserController::class, 'updatePreferences']);
 
         Route::delete('/account', [UserController::class, 'deleteAccount']);
+    });
+
+    Route::prefix('photos')->group(function () {
+        Route::get('/profiles/{filename}', [UserController::class, 'servePhoto']);
+        // Nanti bisa ditambahkan routes untuk foto lainnya
+        // Route::get('/transactions/{filename}', [TransactionController::class, 'servePhoto']);
     });
 
     // Admin routes
