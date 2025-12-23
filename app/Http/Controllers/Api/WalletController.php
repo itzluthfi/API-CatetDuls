@@ -77,6 +77,28 @@ class WalletController extends Controller
     public function store(Request $request)
     {
         try {
+            // Mapping camelCase inputs (from Android) to snake_case
+            $input = $request->all();
+            
+            // Map keys
+            $mappings = [
+                'bookId' => 'book_id',
+                'initialBalance' => 'initial_balance',
+                'isDefault' => 'is_default',
+                'serverId' => 'server_id',
+                'createdAt' => 'created_at',
+                'updatedAt' => 'updated_at',
+            ];
+
+            foreach ($mappings as $camel => $snake) {
+                if (isset($input[$camel]) && !isset($input[$snake])) {
+                    $input[$snake] = $input[$camel];
+                }
+            }
+            
+            // Replace request input with mapped data
+            $request->replace($input);
+
             $validated = $request->validate([
                 'book_id' => 'required|exists:books,id',
                 'name' => 'required|string|max:255',
@@ -115,7 +137,24 @@ class WalletController extends Controller
                 ", [$validated['book_id']]);
             }
 
-            // Insert wallet
+            // 1. Cek Duplikat (Idempotency Key: book_id + name + type)
+            $existing = DB::table('wallets')
+                ->where('book_id', $validated['book_id'])
+                ->where('name', $validated['name'])
+                ->where('type', $validated['type'])
+                ->first();
+
+            if ($existing) {
+                // Jika sudah ada, return data lama dengan ID servernya
+                $existing->server_id = $existing->id;
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Wallet already exists',
+                    'data' => $existing
+                ], 200);
+            }
+
+            // 2. Jika belum ada, baru insert
             $initialBalance = $validated['initial_balance'] ?? 0;
             $walletId = DB::table('wallets')->insertGetId([
                 'book_id' => $validated['book_id'],
@@ -132,7 +171,7 @@ class WalletController extends Controller
 
             // Get created wallet
             $wallet = DB::selectOne("
-                SELECT * FROM wallets WHERE id = ?
+                SELECT *, id as server_id FROM wallets WHERE id = ?
             ", [$walletId]);
 
             DB::commit();
@@ -235,6 +274,24 @@ class WalletController extends Controller
                     'message' => 'Wallet not found or unauthorized'
                 ], 404);
             }
+
+            // Mapping camelCase inputs (from Android) to snake_case
+            $input = $request->all();
+            
+            // Map keys
+            $mappings = [
+                'initialBalance' => 'initial_balance',
+                'isDefault' => 'is_default',
+            ];
+
+            foreach ($mappings as $camel => $snake) {
+                if (isset($input[$camel]) && !isset($input[$snake])) {
+                    $input[$snake] = $input[$camel];
+                }
+            }
+            
+            // Replace request input with mapped data
+            $request->replace($input);
 
             $validated = $request->validate([
                 'name' => 'sometimes|string|max:255',

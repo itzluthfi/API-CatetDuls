@@ -58,7 +58,7 @@ class CategoryController extends Controller
                 $query->where('categories.type', $type);
             }
 
-            $categories = $query->orderBy('name')->get();
+            $categories = $query->orderBy('categories.name')->get();
 
             return response()->json([
                 'success' => true,
@@ -77,10 +77,31 @@ class CategoryController extends Controller
      */
     public function store(Request $request)
     {
+        // Mapping camelCase inputs (from Android) to snake_case
+        $input = $request->all();
+        
+        // Map keys
+        $mappings = [
+            'bookId' => 'book_id',
+            'isDefault' => 'is_default',
+            'createdAt' => 'created_at',
+            'updatedAt' => 'updated_at',
+            'serverId' => 'server_id',
+        ];
+
+        foreach ($mappings as $camel => $snake) {
+            if (isset($input[$camel]) && !isset($input[$snake])) {
+                $input[$snake] = $input[$camel];
+            }
+        }
+        
+        // Replace request input with mapped data
+        $request->replace($input);
+
         $validated = $request->validate([
             'book_id' => 'required|exists:books,id',
             'name' => 'required|string|max:255',
-            'type' => 'required|in:PEMASUKAN,PENGELUARAN',
+            'type' => 'required|in:PEMASUKAN,PENGELUARAN,TRANSFER',
             'color' => 'nullable|string|max:7',
             'icon' => 'nullable|string|max:10',
             'is_default' => 'boolean',
@@ -97,12 +118,33 @@ class CategoryController extends Controller
 
         $validated['created_at_ts'] = time();
 
+        // 1. Cek Duplikat (Idempotency Key: book_id + name + type)
+        $existing = Category::where('book_id', $validated['book_id'])
+            ->where('name', $validated['name'])
+            ->where('type', $validated['type'])
+            ->first();
+
+        if ($existing) {
+            $data = $existing->toArray();
+            $data['server_id'] = $existing->id;
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Category already exists',
+                'data' => $data
+            ], 200);
+        }
+
+        // 2. Jika belum ada, create baru
         $category = Category::create($validated);
+        
+        $data = $category->toArray();
+        $data['server_id'] = $category->id;
 
         return response()->json([
             'success' => true,
             'message' => 'Category created successfully',
-            'data' => $category
+            'data' => $data
         ], 201);
     }
 
@@ -140,9 +182,26 @@ class CategoryController extends Controller
             ], 403);
         }
 
+        // Mapping camelCase inputs (from Android) to snake_case
+        $input = $request->all();
+        
+        // Map keys
+        $mappings = [
+            'isDefault' => 'is_default',
+        ];
+
+        foreach ($mappings as $camel => $snake) {
+            if (isset($input[$camel]) && !isset($input[$snake])) {
+                $input[$snake] = $input[$camel];
+            }
+        }
+        
+        // Replace request input with mapped data
+        $request->replace($input);
+
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
-            'type' => 'sometimes|in:PEMASUKAN,PENGELUARAN',
+            'type' => 'sometimes|in:PEMASUKAN,PENGELUARAN,TRANSFER',
             'color' => 'nullable|string|max:7',
             'icon' => 'nullable|string|max:10',
             'is_default' => 'boolean',

@@ -83,6 +83,31 @@ class TransactionController extends Controller
 
             $whereClause = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
+            if ($request->query('no_pagination')) {
+                // Untuk keperluan Sync / List tanpa pagination
+                $transactions = DB::select("
+                    SELECT 
+                        t.*,
+                        w.name as wallet_name,
+                        w.type as wallet_type,
+                        c.name as category_name,
+                        c.type as category_type,
+                        c.color as category_color,
+                        c.icon as category_icon
+                    FROM transactions t
+                    INNER JOIN books b ON t.book_id = b.id
+                    LEFT JOIN wallets w ON t.wallet_id = w.id
+                    LEFT JOIN categories c ON t.category_id = c.id
+                    $whereClause
+                    ORDER BY t.created_at_ms DESC
+                ", $params);
+
+                return response()->json([
+                    'success' => true,
+                    'data' => $transactions
+                ]);
+            }
+
             // Get total count
             $totalQuery = "
                 SELECT COUNT(*) as total
@@ -142,11 +167,44 @@ class TransactionController extends Controller
     public function store(Request $request)
     {
         try {
+            // Mapping camelCase inputs (from Android) to snake_case
+            $input = $request->all();
+            
+            // Map keys
+            $mappings = [
+                'walletId' => 'wallet_id',
+                'categoryId' => 'category_id',
+                'createdAt' => 'created_at_ms',
+                'lastSyncAt' => 'last_sync_at',
+                'serverId' => 'server_id',
+            ];
+
+            foreach ($mappings as $camel => $snake) {
+                if (isset($input[$camel]) && !isset($input[$snake])) {
+                    $input[$snake] = $input[$camel];
+                }
+            }
+            
+            // Replace request input with mapped data
+            $request->replace($input);
+
+            // Infer book_id from wallet_id if not present
+            if (!$request->has('book_id') && $request->has('wallet_id')) {
+                $walletAndBook = DB::table('wallets')
+                    ->where('id', $request->input('wallet_id'))
+                    ->select('book_id')
+                    ->first();
+                    
+                if ($walletAndBook) {
+                    $request->merge(['book_id' => $walletAndBook->book_id]);
+                }
+            }
+
             $validated = $request->validate([
                 'book_id' => 'required|exists:books,id',
                 'wallet_id' => 'required|exists:wallets,id',
                 'category_id' => 'required|exists:categories,id',
-                'type' => 'required|in:PEMASUKAN,PENGELUARAN',
+                'type' => 'required|in:PEMASUKAN,PENGELUARAN,TRANSFER',
                 'amount' => 'required|integer|min:0',
                 'note' => 'nullable|string|max:500',
                 'created_at_ms' => 'nullable|integer',
@@ -200,6 +258,7 @@ class TransactionController extends Controller
             $transaction = DB::selectOne("
                 SELECT 
                     t.*,
+                    t.id as server_id,
                     w.name as wallet_name,
                     c.name as category_name
                 FROM transactions t
@@ -302,10 +361,29 @@ class TransactionController extends Controller
                 ], 404);
             }
 
+            // Mapping camelCase inputs (from Android) to snake_case
+            $input = $request->all();
+            
+            // Map keys
+            $mappings = [
+                'walletId' => 'wallet_id',
+                'categoryId' => 'category_id',
+                'createdAt' => 'created_at_ms',
+            ];
+
+            foreach ($mappings as $camel => $snake) {
+                if (isset($input[$camel]) && !isset($input[$snake])) {
+                    $input[$snake] = $input[$camel];
+                }
+            }
+            
+            // Replace request input with mapped data
+            $request->replace($input);
+
             $validated = $request->validate([
                 'wallet_id' => 'sometimes|exists:wallets,id',
                 'category_id' => 'sometimes|exists:categories,id',
-                'type' => 'sometimes|in:PEMASUKAN,PENGELUARAN',
+                'type' => 'sometimes|in:PEMASUKAN,PENGELUARAN,TRANSFER',
                 'amount' => 'sometimes|integer|min:0',
                 'note' => 'nullable|string|max:500',
                 'created_at_ms' => 'sometimes|integer',

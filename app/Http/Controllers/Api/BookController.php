@@ -47,6 +47,26 @@ class BookController extends Controller
     public function store(Request $request)
     {
         try {
+            // Mapping camelCase inputs (from Android) to snake_case
+            $input = $request->all();
+            
+            // Map keys
+            $mappings = [
+                'isDefault' => 'is_default',
+                'createdAt' => 'created_at',
+                'updatedAt' => 'updated_at',
+                'serverId' => 'server_id',
+            ];
+
+            foreach ($mappings as $camel => $snake) {
+                if (isset($input[$camel]) && !isset($input[$snake])) {
+                    $input[$snake] = $input[$camel];
+                }
+            }
+            
+            // Replace request input with mapped data
+            $request->replace($input);
+
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'description' => 'nullable|string',
@@ -69,7 +89,24 @@ class BookController extends Controller
                 ", [$userId]);
             }
 
-            // Insert book baru
+            // 1. Cek apakah buku dengan nama yang sama SUDAH ADA (untuk mencegah duplikat)
+            $existingBook = DB::table('books')
+                ->where('user_id', $userId)
+                ->where('name', $validated['name'])
+                ->first();
+
+            if ($existingBook) {
+                // Jika sudah ada, kembalikan buku tersebut (Idempotency)
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Book already exists',
+                    'data' => $existingBook,
+                    // Tambahkan server_id agar Android bisa mapping
+                    'server_id' => $existingBook->id 
+                ], 200);
+            }
+
+            // 2. Jika belum ada, baru insert
             $bookId = DB::table('books')->insertGetId([
                 'user_id' => $userId,
                 'name' => $validated['name'],
@@ -83,7 +120,7 @@ class BookController extends Controller
 
             // Get book yang baru dibuat
             $book = DB::selectOne("
-                SELECT * FROM books WHERE id = ?
+                SELECT *, id as server_id FROM books WHERE id = ?
             ", [$bookId]);
 
             DB::commit();
@@ -196,6 +233,23 @@ class BookController extends Controller
                     'message' => 'Book not found or unauthorized'
                 ], 404);
             }
+
+            // Mapping camelCase inputs (from Android) to snake_case
+            $input = $request->all();
+            
+            // Map keys
+            $mappings = [
+                'isDefault' => 'is_default',
+            ];
+
+            foreach ($mappings as $camel => $snake) {
+                if (isset($input[$camel]) && !isset($input[$snake])) {
+                    $input[$snake] = $input[$camel];
+                }
+            }
+            
+            // Replace request input with mapped data
+            $request->replace($input);
 
             $validated = $request->validate([
                 'name' => 'sometimes|string|max:255',

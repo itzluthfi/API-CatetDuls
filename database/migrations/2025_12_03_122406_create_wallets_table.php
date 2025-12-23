@@ -19,8 +19,8 @@ return new class extends Migration
             $table->string('type');
             $table->string('icon')->nullable();
             $table->string('color')->nullable();
-
             $table->decimal('initial_balance', 15, 2)->default(0);
+            $table->decimal('current_balance', 15, 2)->default(0);
 
             $table->boolean('is_default')->default(false);
 
