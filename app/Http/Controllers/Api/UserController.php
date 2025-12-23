@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Exception;
+use Illuminate\Support\Facades\Log; 
 
 class UserController extends Controller
 {
@@ -180,6 +181,70 @@ class UserController extends Controller
     }
 
     /**
+     * Serve profile photo with proper headers
+     */
+    public function servePhoto($filename)
+    {
+        try {
+            // Debug: Log filename
+            Log::info('Serving photo:', ['filename' => $filename]);
+            
+            // Validasi filename
+            if (empty($filename) || !preg_match('/^[a-zA-Z0-9_.-]+$/', $filename)) {
+                Log::warning('Invalid filename:', ['filename' => $filename]);
+                return response('', 404);
+            }
+
+            // Gunakan storage disk 'public'
+            $path = 'profiles/' . $filename;
+            
+            // Cek jika file ada
+            if (!Storage::disk('public')->exists($path)) {
+                Log::warning('File not found:', ['path' => $path]);
+                return response('', 404);
+            }
+
+            // Get the full path
+            $fullPath = Storage::disk('public')->path($path);
+            
+            // Cek permission file
+            if (!is_readable($fullPath)) {
+                Log::error('File not readable:', ['path' => $fullPath]);
+                return response('', 500);
+            }
+
+            // Get MIME type berdasarkan ekstensi
+            $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+            
+            $mimeType = match ($extension) {
+                'jpg', 'jpeg' => 'image/jpeg',
+                'png' => 'image/png',
+                'gif' => 'image/gif',
+                'webp' => 'image/webp',
+                default => 'application/octet-stream',
+            };
+
+            // Headers untuk caching
+            $headers = [
+                'Content-Type' => $mimeType,
+                'Cache-Control' => 'public, max-age=31536000', // Cache 1 tahun
+                'Access-Control-Allow-Origin' => '*', // Untuk development
+            ];
+
+            // Return file response
+            return response()->file($fullPath, $headers);
+
+        } catch (Exception $e) {
+            Log::error('Failed to serve photo:', [
+                'filename' => $filename,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response('', 500);
+        }
+    }
+
+    /**
      * Upload profile photo
      */
     public function uploadPhoto(Request $request)
@@ -200,13 +265,19 @@ class UserController extends Controller
 
             // Delete old photo
             if ($user->photo_url) {
-                $oldPath = str_replace('/storage/', '', $user->photo_url);
-                Storage::disk('public')->delete($oldPath);
+                // Extract filename dari URL lama
+                preg_match('/profiles\/(.+)$/', $user->photo_url, $matches);
+                if (isset($matches[1])) {
+                    Storage::disk('public')->delete('profiles/' . $matches[1]);
+                }
             }
 
             // Upload new photo
             $path = $request->file('photo')->store('profiles', 'public');
-            $photoUrl = Storage::url($path);
+            $filename = basename($path);
+            
+            // PENTING: Gunakan endpoint baru
+            $photoUrl = '/api/photos/profiles/' . $filename;
 
             // Update photo_url
             DB::update("
