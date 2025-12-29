@@ -84,6 +84,7 @@ class AuthController extends Controller
                     'user' => $user,
                     'token' => $token,
                     'token_type' => 'Bearer',
+                    'expires_in' => 3600, // ⬅️ ADD THIS (1 hour in seconds)
                 ]
             ], 201);
         } catch (ValidationException $e) {
@@ -122,7 +123,7 @@ class AuthController extends Controller
         }
 
         // Delete old tokens
-        $user->tokens()->delete();
+        // $user->tokens()->delete();
 
         // Create new token
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -134,6 +135,7 @@ class AuthController extends Controller
                 'user' => $user,
                 'token' => $token,
                 'token_type' => 'Bearer',
+                'expires_in' => 3600, // ⬅️ ADD THIS (1 hour in seconds)
             ]
         ]);
     }
