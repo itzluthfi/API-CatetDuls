@@ -24,9 +24,6 @@ Route::prefix('auth')->group(function () {
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('api.password.email');
 });
 
-Route::options('/{any}', function () {
-    return response()->json();
-})->where('any', '.*');
 
 Route::get('/pub-categories', [CategoryController::class, 'publicIndex']);
 
@@ -132,4 +129,40 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/by-date', [TransactionController::class, 'byDate']);
         Route::post('/bulk-delete', [TransactionController::class, 'bulkDelete']);
     });
+    // ======================
+    // BOOK CLOSINGS
+    // ======================
+    Route::prefix('book-closings')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\BookClosingController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\BookClosingController::class, 'store']);
+        Route::get('/{id}', [App\Http\Controllers\Api\BookClosingController::class, 'show']);
+        Route::put('/{id}', [App\Http\Controllers\Api\BookClosingController::class, 'update']);
+        Route::delete('/{id}', [App\Http\Controllers\Api\BookClosingController::class, 'destroy']);
+    });
+
+    // ======================
+    // MEMOS
+    // ======================
+    Route::prefix('memos')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\MemoController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\MemoController::class, 'store']);
+        Route::get('/{id}', [App\Http\Controllers\Api\MemoController::class, 'show']);
+        Route::put('/{id}', [App\Http\Controllers\Api\MemoController::class, 'update']);
+        Route::delete('/{id}', [App\Http\Controllers\Api\MemoController::class, 'destroy']);
+    });
+
+    // ======================
+    // TAGS
+    // ======================
+    Route::prefix('tags')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\TagController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\TagController::class, 'store']);
+        Route::get('/{id}', [App\Http\Controllers\Api\TagController::class, 'show']);
+        Route::put('/{id}', [App\Http\Controllers\Api\TagController::class, 'update']);
+        Route::delete('/{id}', [App\Http\Controllers\Api\TagController::class, 'destroy']);
+    });
 });
+
+Route::options('/{any}', function () {
+    return response()->json();
+})->where('any', '.*');
